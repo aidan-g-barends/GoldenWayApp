@@ -295,26 +295,6 @@ export async function fetchMyStaffProfile() {
   };
 }
 
-/**
- * Update my own staff profile (0011 RPC). Own row only; email is fixed.
- * Returns the updated staff row mapped camelCase.
- */
-export async function updateMyStaffProfile({ firstName, surname, phone }) {
-  const row = await rpc("update_my_staff_profile", {
-    p_first_name: firstName?.trim() || "",
-    p_surname: surname?.trim() || "",
-    p_phone: phone?.trim() || null,
-  });
-  const r = Array.isArray(row) ? row[0] : row;
-  return {
-    firstName: r.first_name,
-    surname: r.surname,
-    email: r.email,
-    phone: r.phone || "",
-    role: r.role,
-  };
-}
-
 export async function fetchAgentsOnline() {
   const result = await rpc("agents_online", {});
   return result || { online: false, count: 0 };
@@ -325,9 +305,15 @@ export async function fetchAgentsOnline() {
 // =====================================================================
 
 export async function fetchMyRuns() {
+  // The read policy lets every staff role see every run (the admin fleet
+  // view needs that), so "my" runs must be filtered here or a second
+  // driver's run would show up as this driver's current run.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return [];
   const { data, error } = await supabase
     .from("vehicle_runs")
     .select("*")
+    .eq("driver_id", session.user.id)
     .order("started_at", { ascending: false })
     .limit(60); // generous enough to cover a week of multi-run shifts for on-time stats
   if (error) throw toApiError(error);
