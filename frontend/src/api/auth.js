@@ -63,6 +63,12 @@ export async function fetchMyProfileType() {
   }
 }
 
+/** Pre-check before submitting a staff request: is this email free of
+ * any existing account (commuter or staff)? */
+export async function checkEmailAvailableForStaff(email) {
+  return rpc("check_email_available_for_staff", { p_email: email.trim() });
+}
+
 /**
  * One sign-in for everyone. Resolves { profileType, staff } so the UI can
  * route commuters to the app and staff to the console.
@@ -137,7 +143,13 @@ export async function loginAny(email, password) {
 // ---------------------------------------------------------------------
 
 /** Public "Staff sign-up" form → lands in the ADMIN approval queue. */
-export async function requestStaffAccess({ email, firstName, surname, requestedRole, motivation }) {
+export async function requestStaffAccess({
+  email,
+  firstName,
+  surname,
+  requestedRole,
+  motivation,
+}) {
   await rpc("request_staff_access", {
     p_email: email.trim(),
     p_first_name: firstName.trim(),

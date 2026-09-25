@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { fetchStaffRequests, decideStaffAccess, inviteStaffMember } from "../../../api/staff";
+import {
+  fetchStaffRequests,
+  decideStaffAccess,
+  inviteStaffMember,
+  sendStaffInvite,
+} from "../../../api/staff";
 import { ApiError } from "../../../api/client";
 
 /**
@@ -38,7 +43,10 @@ export default function OnboardingScreen() {
     try {
       setRequests(await fetchStaffRequests(status));
     } catch (err) {
-      setMessage({ kind: "err", text: err?.message || "Could not load the queue" });
+      setMessage({
+        kind: "err",
+        text: err?.message || "Could not load the queue",
+      });
     } finally {
       setLoading(false);
     }
@@ -59,20 +67,45 @@ export default function OnboardingScreen() {
         approve ? null : denyNote.trim() || null,
       );
       if (approve) {
-        // 0012: the approval trigger provisions the staff row on the spot —
-        // no email, the applicant signs in with the password they chose.
-        setMessage(
-          { kind: "ok", text: `${updated.email} approved as ${updated.requestedRole}. They can sign in with the password they chose at sign-up.` },
-        );
+        // Fire the invite email. This is a best-effort second step —
+        // the approval itself already succeeded and is recorded; if the
+        // email send fails, the request is still APPROVED, so we show a
+        // warning rather than rolling anything back. An admin can retry
+        // by re-approving via attach_staff_to_existing_account or by
+        // asking the applicant to check spam first.
+        try {
+          await sendStaffInvite({
+            requestId: updated.id,
+            email: updated.email,
+            firstName: updated.firstName,
+            surname: updated.surname,
+            requestedRole: updated.requestedRole,
+          });
+          setMessage({
+            kind: "ok",
+            text: `${updated.email} approved as ${updated.requestedRole} — an invite email has been sent.`,
+          });
+        } catch (inviteErr) {
+          setMessage({
+            kind: "err",
+            text: `${updated.email} was approved, but the invite email failed to send: ${inviteErr?.message || "unknown error"}. You may need to retry manually.`,
+          });
+        }
       } else {
-        setMessage({ kind: "ok", text: `${updated.email} denied — their account has been removed.` });
+        setMessage({
+          kind: "ok",
+          text: `${updated.email} denied — their account has been removed.`,
+        });
       }
       setDenying(null);
       setDenyNote("");
       if (tab !== "PENDING") load(tab);
       else setRequests((rows) => rows.filter((r) => r.id !== request.id));
     } catch (err) {
-      setMessage({ kind: "err", text: err?.message || "Could not save the decision" });
+      setMessage({
+        kind: "err",
+        text: err?.message || "Could not save the decision",
+      });
     } finally {
       setBusyId(null);
     }
@@ -83,9 +116,12 @@ export default function OnboardingScreen() {
       <div className="mx-auto max-w-3xl">
         <header className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="font-display text-xl font-bold text-ink-900">Onboarding queue</h1>
+            <h1 className="font-display text-xl font-bold text-ink-900">
+              Onboarding queue
+            </h1>
             <p className="text-[13px] text-ink-900/50 mt-1">
-              Approve or deny staff access requests. Approval activates the account the applicant created at sign-up.
+              Approve or deny staff access requests. Approval activates the
+              account the applicant created at sign-up.
             </p>
           </div>
           <button
@@ -128,12 +164,18 @@ export default function OnboardingScreen() {
         )}
 
         <div className="mt-4 flex flex-col gap-3">
-          {loading && <p className="text-[13px] text-ink-900/40 py-6 text-center">Loading…</p>}
+          {loading && (
+            <p className="text-[13px] text-ink-900/40 py-6 text-center">
+              Loading…
+            </p>
+          )}
 
           {!loading && requests.length === 0 && (
             <div className="rounded-2xl border border-dashed border-ink-900/10 py-10 text-center">
               <p className="text-[13px] text-ink-900/50">
-                {tab === "PENDING" ? "The queue is clear. 🎉" : `No ${tab === "ALL" ? "" : tab.toLowerCase()} requests.`}
+                {tab === "PENDING"
+                  ? "The queue is clear. 🎉"
+                  : `No ${tab === "ALL" ? "" : tab.toLowerCase()} requests.`}
               </p>
             </div>
           )}
@@ -144,61 +186,67 @@ export default function OnboardingScreen() {
                 key={r.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25 }}                  className="rounded-2xl border border-ink-900/10 bg-white p-5 shadow-[0_14px_30px_-18px_rgba(0,0,0,0.6)]"
+                transition={{ duration: 0.25 }}
+                className="rounded-2xl border border-ink-900/10 bg-white p-5 shadow-[0_14px_30px_-18px_rgba(0,0,0,0.6)]"
               >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h2 className="font-display text-[15px] font-semibold truncate">
-                        {r.firstName} {r.surname}
-                      </h2>
-                      <p className="text-[12px] text-ink-900/50 truncate">{r.email}</p>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-wider ${
-                        ROLE_PILL[r.requestedRole] || "border-ink-900/15 text-ink-900/55"
-                      }`}
-                    >
-                      {r.requestedRole}
-                    </span>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="font-display text-[15px] font-semibold truncate">
+                      {r.firstName} {r.surname}
+                    </h2>
+                    <p className="text-[12px] text-ink-900/50 truncate">
+                      {r.email}
+                    </p>
                   </div>
+                  <span
+                    className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold tracking-wider ${
+                      ROLE_PILL[r.requestedRole] ||
+                      "border-ink-900/15 text-ink-900/55"
+                    }`}
+                  >
+                    {r.requestedRole}
+                  </span>
+                </div>
 
-                  {r.motivation && (
-                    <p className="mt-3 text-[12.5px] leading-relaxed text-ink-900/70 italic">
-                      “{r.motivation}”
-                    </p>
-                  )}
-
-                  <p className="mt-2 text-[11px] text-ink-900/35">
-                    Requested {new Date(r.requestedAt).toLocaleString()}
+                {r.motivation && (
+                  <p className="mt-3 text-[12.5px] leading-relaxed text-ink-900/70 italic">
+                    “{r.motivation}”
                   </p>
+                )}
 
-                  {r.status === "PENDING" ? (
-                    <div className="mt-4 flex gap-2">
-                      <button
-                        type="button"
-                        disabled={busyId === r.id}
-                        onClick={() => decide(r, true)}
-                        className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-[12px] font-bold text-white hover:bg-emerald-400 transition-all hover:shadow-[0_10px_24px_-10px_rgba(16,185,129,0.5)] disabled:opacity-50 active:scale-[0.98]"
-                      >
-                        {busyId === r.id ? "Saving…" : "Approve"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === r.id}
-                        onClick={() => setDenying(r)}
-                        className="flex-1 rounded-xl border border-ink-900/10 py-2.5 text-[12px] font-semibold text-ink-900/70 hover:text-ink-900 hover:border-ink-900/25 transition-colors disabled:opacity-50"
-                      >
-                        Deny
-                      </button>
-                    </div>
-                  ) : (
-                    <p className="mt-3 text-[11px] text-ink-900/40">
-                      {r.status}
-                      {r.decidedAt ? ` · decided ${new Date(r.decidedAt).toLocaleString()}` : ""}
-                      {r.onboardedAt ? " · account activated ✓" : ""}
-                      {r.decisionNote ? ` · note: ${r.decisionNote}` : ""}
-                    </p>
-                  )}
+                <p className="mt-2 text-[11px] text-ink-900/35">
+                  Requested {new Date(r.requestedAt).toLocaleString()}
+                </p>
+
+                {r.status === "PENDING" ? (
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === r.id}
+                      onClick={() => decide(r, true)}
+                      className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-[12px] font-bold text-white hover:bg-emerald-400 transition-all hover:shadow-[0_10px_24px_-10px_rgba(16,185,129,0.5)] disabled:opacity-50 active:scale-[0.98]"
+                    >
+                      {busyId === r.id ? "Saving…" : "Approve"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === r.id}
+                      onClick={() => setDenying(r)}
+                      className="flex-1 rounded-xl border border-ink-900/10 py-2.5 text-[12px] font-semibold text-ink-900/70 hover:text-ink-900 hover:border-ink-900/25 transition-colors disabled:opacity-50"
+                    >
+                      Deny
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-[11px] text-ink-900/40">
+                    {r.status}
+                    {r.decidedAt
+                      ? ` · decided ${new Date(r.decidedAt).toLocaleString()}`
+                      : ""}
+                    {r.onboardedAt ? " · account activated ✓" : ""}
+                    {r.decisionNote ? ` · note: ${r.decisionNote}` : ""}
+                  </p>
+                )}
               </motion.article>
             ))}
         </div>
@@ -217,7 +265,6 @@ export default function OnboardingScreen() {
       />
       <InviteModal
         open={inviteOpen}
-        busy={false}
         onClose={() => setInviteOpen(false)}
         onInvited={(msg) => {
           setInviteOpen(false);
@@ -232,7 +279,11 @@ export default function OnboardingScreen() {
 function DenyModal({ request, note, setNote, busy, onClose, onConfirm }) {
   if (!request) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6"
+      role="dialog"
+      aria-modal="true"
+    >
       <motion.div
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
@@ -273,9 +324,15 @@ function DenyModal({ request, note, setNote, busy, onClose, onConfirm }) {
 
 const ROLES = ["DRIVER", "INSPECTOR", "CLERK", "AGENT", "ADMIN"];
 
-function InviteModal({ open, busy, onClose, onInvited }) {
-  const [form, setForm] = useState({ email: "", firstName: "", surname: "", role: "DRIVER" });
+function InviteModal({ open, onClose, onInvited }) {
+  const [form, setForm] = useState({
+    email: "",
+    firstName: "",
+    surname: "",
+    role: "DRIVER",
+  });
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
   if (!open) return null;
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -287,28 +344,61 @@ function InviteModal({ open, busy, onClose, onInvited }) {
       setError("Enter a valid email address.");
       return;
     }
+    if (!form.firstName.trim() || !form.surname.trim()) {
+      setError("Enter their first name and surname.");
+      return;
+    }
+    setBusy(true);
     try {
       const row = await inviteStaffMember(form);
-      onInvited(`${row.email} invited as ${row.requestedRole}. They finish by signing up with that email and password.`);
+      try {
+        await sendStaffInvite({
+          requestId: row.id,
+          email: row.email,
+          firstName: row.firstName,
+          surname: row.surname,
+          requestedRole: row.requestedRole,
+        });
+        onInvited(
+          `${row.email} invited as ${row.requestedRole} — an invite email has been sent.`,
+        );
+      } catch (inviteErr) {
+        onInvited(
+          `${row.email} was pre-approved as ${row.requestedRole}, but the invite email failed to send: ${inviteErr?.message || "unknown error"}. You may need to retry manually.`,
+        );
+      }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Could not send the invite");
+      setError(
+        err instanceof ApiError ? err.message : "Could not send the invite",
+      );
+    } finally {
+      setBusy(false);
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6"
+      role="dialog"
+      aria-modal="true"
+    >
       <motion.form
         onSubmit={submit}
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full max-w-sm rounded-2xl border border-ink-900/10 bg-white p-6"
       >
-        <h2 className="font-display text-lg font-bold">Invite a staff member</h2>
+        <h2 className="font-display text-lg font-bold">
+          Invite a staff member
+        </h2>
         <p className="text-[12px] text-ink-900/50 mt-1">
           Pre-approves their email — they finish by signing up with it.
         </p>
         {error && (
-          <p role="alert" className="mt-3 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-[12px] text-red-300">
+          <p
+            role="alert"
+            className="mt-3 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-[12px] text-red-300"
+          >
             {error}
           </p>
         )}
@@ -340,7 +430,9 @@ function InviteModal({ open, busy, onClose, onInvited }) {
             className="w-full rounded-xl border border-ink-900/10 bg-cream-200 px-4 py-3 text-[13px] text-ink-900 outline-none focus:border-gold-400/60"
           >
             {ROLES.map((r) => (
-              <option key={r} value={r}>{r}</option>
+              <option key={r} value={r}>
+                {r}
+              </option>
             ))}
           </select>
         </div>

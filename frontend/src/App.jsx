@@ -14,6 +14,7 @@ import CheckEmailScreen from "./screens/auth/CheckEmailScreen";
 import NotFoundScreen from "./screens/NotFoundScreen";
 import DashboardLayout from "./layout/DashboardLayout";
 import StaffLayout from "./layout/StaffLayout";
+import StaffCompleteSignupScreen from "./screens/auth/StaffCompleteSignupScreen";
 
 // Commuter surfaces
 import HomeScreen from "./screens/commuter/home/HomeScreen";
@@ -107,6 +108,10 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
           <Route path="/reset-password" element={<ResetPasswordScreen />} />
           <Route path="/staff-signup" element={<StaffSignupScreen />} />
+          <Route
+            path="/staff/complete-signup"
+            element={<StaffCompleteSignupScreen />}
+          />
           <Route path="/account-created" element={<AccountCreatedScreen />} />
           <Route path="/check-email" element={<CheckEmailScreen />} />
 

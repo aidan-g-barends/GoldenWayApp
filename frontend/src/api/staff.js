@@ -19,7 +19,9 @@ function toApiError(error, fallbackStatus = 400) {
     return new ApiError(403, { error: "Admin only" });
   }
   if (/not PENDING|nothing to decide/i.test(message)) {
-    return new ApiError(409, { error: "This request was already decided — refresh the queue." });
+    return new ApiError(409, {
+      error: "This request was already decided — refresh the queue.",
+    });
   }
   if (/already exists|duplicate/i.test(message)) {
     return new ApiError(409, { error: message });
@@ -69,6 +71,41 @@ export async function decideStaffAccess(requestId, approve, note) {
       return data;
     });
   return mapRequest(Array.isArray(row) ? row[0] : row);
+}
+
+/**
+ * Fires the invite-staff Edge Function after an ADMIN approves a
+ * request — creates the auth.users row via inviteUserByEmail() and
+ * sends Supabase's "Invite user" email (through the existing custom
+ * SMTP). The applicant sets a password on /staff/complete-signup.
+ */
+export async function sendStaffInvite({
+  requestId,
+  email,
+  firstName,
+  surname,
+  requestedRole,
+}) {
+  const { data, error } = await supabase.functions.invoke("invite-staff", {
+    body: {
+      requestId,
+      email,
+      firstName,
+      surname,
+      requestedRole,
+    },
+  });
+  if (error) {
+    // supabase-js wraps non-2xx responses in error; the function's own
+    // { error: "..." } body is usually in error.context, but fall back
+    // to a generic message if that shape ever changes.
+    const message =
+      error.context?.error ||
+      error.message ||
+      "Could not send the invite email";
+    throw new ApiError(400, { error: message });
+  }
+  return data;
 }
 
 /** Direct invite: pre-approve someone who never self-requested (ADMIN-only). */
@@ -145,7 +182,10 @@ export async function updateMyStaffDetails({
       return data;
     });
   const payload = Array.isArray(row) ? row[0] : row;
-  if (!payload) throw new ApiError(500, { error: "Empty response from update_my_staff_details" });
+  if (!payload)
+    throw new ApiError(500, {
+      error: "Empty response from update_my_staff_details",
+    });
   return {
     firstName: payload.firstName,
     surname: payload.surname,
